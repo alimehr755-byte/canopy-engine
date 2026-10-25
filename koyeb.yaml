@@ -1,0 +1,98 @@
+services:
+  # PostgreSQL database
+  - type: database
+    name: canopy-postgres
+    engine: pg
+    version: "16"
+    instance_type: free
+    region: was
+    database_name: veritas
+    username: veritas
+
+  # Redis for queue mode
+  - type: database
+    name: canopy-redis
+    engine: redis
+    version: "7"
+    instance_type: free
+    region: was
+
+  # Web service (Next.js)
+  - type: web
+    name: canopy-web
+    git:
+      repository: github.com/alimehr755-byte/canopy-engine
+      branch: main
+    build:
+      dockerfile: Dockerfile
+    runtime: docker
+    instance_type: free
+    region: was
+    routes:
+      - path: /
+    env:
+      - name: DATABASE_URL
+        value: "{{canopy-postgres.DATABASE_URL}}"
+      - name: REDIS_URL
+        value: "{{canopy-redis.REDIS_URL}}"
+      - name: ANALYSIS_MODE
+        value: "queue"
+      - name: SEMANTIC_SIMILARITY_THRESHOLD
+        value: "0.6"
+      - name: NODE_ENV
+        value: "production"
+      - name: PORT
+        value: "3000"
+    healthcheck:
+      http_path: /api/health
+      port: 3000
+    scaling:
+      min: 1
+      max: 1
+
+  # Worker service (BullMQ queue processor)
+  - type: worker
+    name: canopy-worker
+    git:
+      repository: github.com/alimehr755-byte/canopy-engine
+      branch: main
+    build:
+      dockerfile: Dockerfile
+    runtime: docker
+    instance_type: free
+    region: was
+    env:
+      - name: DATABASE_URL
+        value: "{{canopy-postgres.DATABASE_URL}}"
+      - name: REDIS_URL
+        value: "{{canopy-redis.REDIS_URL}}"
+      - name: ANALYSIS_MODE
+        value: "queue"
+      - name: SEMANTIC_SIMILARITY_THRESHOLD
+        value: "0.6"
+      - name: NODE_ENV
+        value: "production"
+
+  # Python AI engine
+  - type: web
+    name: canopy-engine
+    git:
+      repository: github.com/alimehr755-byte/canopy-engine
+      branch: main
+    build:
+      dockerfile: python-engine/Dockerfile
+      docker_context: python-engine
+    runtime: docker
+    instance_type: free
+    region: was
+    routes:
+      - path: /
+    env:
+      - name: PYTHONUNBUFFERED
+        value: "1"
+    healthcheck:
+      http_path: /health
+      port: 8000
+    scaling:
+      min: 1
+      max: 1
