@@ -1,0 +1,112 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  color-scheme: light;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-ink-50 text-ink-900 antialiased;
+}
+
+::selection {
+  @apply bg-amber-200/80 text-ink-950;
+}
+
+.veritas-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(74, 98, 140, 0.45) transparent;
+}
+
+.veritas-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.veritas-scroll::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-ink-400/40;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.veritas-scroll::-webkit-scrollbar-thumb:hover {
+  @apply bg-ink-400/70;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.match-exact {
+  @apply rounded-[3px] bg-red-200/80 decoration-red-500;
+  box-shadow: inset 0 -2px 0 rgba(239, 68, 68, 0.55);
+}
+
+.match-paraphrase {
+  @apply rounded-[3px] bg-amber-200/80 decoration-amber-500;
+  box-shadow: inset 0 -2px 0 rgba(245, 158, 11, 0.55);
+}
+
+.match-exact[data-active="true"] {
+  @apply bg-red-300 text-ink-950;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.65), inset 0 -2px 0 rgba(239, 68, 68, 0.7);
+}
+
+.match-paraphrase[data-active="true"] {
+  @apply bg-amber-300 text-ink-950;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.65), inset 0 -2px 0 rgba(245, 158, 11, 0.7);
+}
+
+.ai-flag {
+  @apply rounded-[3px] bg-violet-200/70;
+  box-shadow: inset 0 -2px 0 rgba(139, 92, 246, 0.6);
+}
+
+.ai-flag[data-active="true"] {
+  @apply bg-violet-300 text-ink-950;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.7), inset 0 -2px 0 rgba(124, 58, 237, 0.75);
+}
+
+.exclusion-quote {
+  @apply border-b border-dashed border-sky-400/70 bg-sky-50/60;
+}
+
+.exclusion-bibliography {
+  @apply bg-slate-100/70 text-ink-600;
+}
+
+.grade-0 {
+  @apply bg-emerald-100 text-emerald-900 ring-emerald-600/20;
+}
+.grade-1 {
+  @apply bg-sky-100 text-sky-900 ring-sky-600/20;
+}
+.grade-2 {
+  @apply bg-amber-100 text-amber-900 ring-amber-600/20;
+}
+.grade-3 {
+  @apply bg-orange-100 text-orange-900 ring-orange-600/20;
+}
+.grade-4 {
+  @apply bg-red-100 text-red-900 ring-red-600/20;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: white;
+  }
+
+  .print-full {
+    height: auto !important;
+    overflow: visible !important;
+  }
+}

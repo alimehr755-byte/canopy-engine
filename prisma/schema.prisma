@@ -1,0 +1,149 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  INSTRUCTOR
+  ADMIN
+}
+
+enum SubmissionStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum SourceType {
+  INTERNET
+  PUBLICATION
+  REPOSITORY
+}
+
+enum MatchKind {
+  EXACT
+  PARAPHRASE
+}
+
+model User {
+  id          String       @id @default(uuid()) @db.Uuid
+  email       String       @unique
+  name        String?
+  role        Role         @default(STUDENT)
+  institution String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  submissions Submission[] @relation("SubmissionAuthor")
+  assignments Assignment[] @relation("AssignmentInstructor")
+}
+
+model Assignment {
+  id           String       @id @default(uuid()) @db.Uuid
+  title        String
+  description  String?
+  dueAt        DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  instructorId String?      @db.Uuid
+  instructor   User?        @relation("AssignmentInstructor", fields: [instructorId], references: [id], onDelete: SetNull)
+  submissions  Submission[]
+
+  @@index([instructorId])
+}
+
+model Submission {
+  id             String           @id @default(uuid()) @db.Uuid
+  title          String
+  rawText        String           @db.Text
+  cleanText      String           @db.Text
+  wordCount      Int              @default(0)
+  characterCount Int              @default(0)
+  similarityScore Float           @default(0)
+  aiScore        Float            @default(0)
+  status         SubmissionStatus @default(QUEUED)
+  error          String?
+  evasionFindings Json?
+  corpusType     SourceType?
+  corpusUrl      String?
+  corpusTitle    String?
+  authorId       String?          @db.Uuid
+  assignmentId   String?          @db.Uuid
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  author         User?            @relation("SubmissionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  assignment     Assignment?      @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  matches        Match[]
+  fingerprints   Fingerprint[]
+  aiResult       AiAnalysisResult?
+
+  @@index([authorId])
+  @@index([assignmentId])
+  @@index([status, createdAt])
+  @@index([createdAt])
+}
+
+model Match {
+  id                   String     @id @default(uuid()) @db.Uuid
+  submissionId         String     @db.Uuid
+  sourceUrl            String?
+  sourceTitle          String?
+  sourceType           SourceType
+  kind                 MatchKind  @default(EXACT)
+  similarityPercentage Float
+  semanticScore        Float?
+  matchedText          String     @db.Text
+  sourceText           String?    @db.Text
+  originalStart        Int
+  originalEnd          Int
+  wordCount            Int        @default(0)
+  createdAt            DateTime   @default(now())
+  submission           Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+  @@index([sourceType])
+}
+
+model Fingerprint {
+  id           String     @id @default(uuid()) @db.Uuid
+  hash         BigInt
+  submissionId String     @db.Uuid
+  position     Int
+  createdAt    DateTime   @default(now())
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([hash])
+  @@index([submissionId, position])
+}
+
+model AiAnalysisResult {
+  id             String     @id @default(uuid()) @db.Uuid
+  submissionId   String     @unique @db.Uuid
+  overallScore   Float
+  perplexity     Float
+  burstiness     Float
+  provider       String     @default("local")
+  model          String     @default("gpt2")
+  sentenceScores Json
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  submission     Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+}
+
+model CitationRule {
+  id                    String   @id @default(uuid()) @db.Uuid
+  institution           String
+  style                 String
+  excludeQuotes         Boolean  @default(true)
+  excludeBibliography   Boolean  @default(true)
+  minMatchWords         Int      @default(10)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([institution, style])
+}

@@ -1,0 +1,9 @@
+node_modules
+.next
+.env
+.env.local
+*.log
+.data
+tsconfig.tsbuildinfo
+__pycache__/
+*.py[cod]
