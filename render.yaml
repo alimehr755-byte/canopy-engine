@@ -1,0 +1,112 @@
+services:
+  # PostgreSQL database
+  - type: pserv
+    name: canopy-postgres
+    plan: free
+    databaseName: veritas
+    user: veritas
+    region: oregon
+
+  # Redis for queue mode
+  - type: redis
+    name: canopy-redis
+    plan: free
+    region: oregon
+    maxmemoryPolicy: allkeys-lru
+
+  # Web service (Next.js)
+  - type: web
+    name: canopy-web
+    runtime: docker
+    plan: free
+    region: oregon
+    repo: https://github.com/alimehr755-byte/canopy-engine
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    buildCommand: ""
+    startCommand: "npm run start"
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: canopy-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: canopy-redis
+          type: redis
+          property: connectionString
+      - key: ANALYSIS_MODE
+        value: queue
+      - key: SEMANTIC_SIMILARITY_THRESHOLD
+        value: "0.6"
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+    autoDeploy: true
+
+  # Worker service (BullMQ queue processor)
+  - type: worker
+    name: canopy-worker
+    runtime: docker
+    plan: free
+    region: oregon
+    repo: https://github.com/alimehr755-byte/canopy-engine
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    buildCommand: ""
+    startCommand: "npx tsx src/worker.ts"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: canopy-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: canopy-redis
+          type: redis
+          property: connectionString
+      - key: ANALYSIS_MODE
+        value: queue
+      - key: SEMANTIC_SIMILARITY_THRESHOLD
+        value: "0.6"
+      - key: NODE_ENV
+        value: production
+    autoDeploy: true
+
+  # Python AI engine (optional - can run as separate service)
+  - type: web
+    name: canopy-engine
+    runtime: docker
+    plan: free
+    region: oregon
+    repo: https://github.com/alimehr755-byte/canopy-engine
+    branch: main
+    dockerfilePath: ./python-engine/Dockerfile
+    dockerContext: ./python-engine
+    buildCommand: ""
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port 8000"
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+    autoDeploy: true
+
+# Optional: Add Qdrant as a separate service if needed
+# For now, the app falls back to local .data/vectors.json
+# Uncomment below if you want managed Qdrant:
+# - type: web
+#   name: canopy-qdrant
+#   runtime: docker
+#   plan: free
+#   region: oregon
+#   repo: https://github.com/qdrant/qdrant
+#   dockerfilePath: ./Dockerfile
+#   startCommand: "./qdrant"
+#   healthCheckPath: /healthz
+#   envVars:
+#     - key: QDRANT__SERVICE__HTTP_PORT
+#       value: "6333"
