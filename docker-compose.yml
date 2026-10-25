@@ -1,0 +1,130 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: veritas
+      POSTGRES_PASSWORD: veritas
+      POSTGRES_DB: veritas
+    ports:
+      - "5432:5432"
+    volumes:
+      - veritas-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U veritas -d veritas"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - veritas-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - veritas-qdrant:/qdrant/storage
+
+  engine:
+    build:
+      context: ./python-engine
+    restart: unless-stopped
+    environment:
+      AI_MODEL: gpt2
+      ALLOW_MODEL_DOWNLOAD: "true"
+      MAX_SENTENCE_TOKENS: "512"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status==200 else 1)"
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  migrate:
+    build:
+      context: .
+      target: builder
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://veritas:veritas@db:5432/veritas?schema=public
+    command: ["npx", "prisma", "db", "push", "--skip-generate"]
+
+  web:
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      engine:
+        condition: service_started
+      qdrant:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://veritas:veritas@db:5432/veritas?schema=public
+      REDIS_URL: redis://redis:6379
+      ANALYSIS_MODE: queue
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: veritas_sources
+      AI_ENGINE_URL: http://engine:8000
+      AI_ENGINE_MODEL: gpt2
+      EMBEDDING_PROVIDER: local
+      SEMANTIC_SIMILARITY_THRESHOLD: "0.6"
+      MAX_UPLOAD_BYTES: "15728640"
+    ports:
+      - "3000:3000"
+    command: ["node", "server.js"]
+
+  worker:
+    build:
+      context: .
+      target: builder
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://veritas:veritas@db:5432/veritas?schema=public
+      REDIS_URL: redis://redis:6379
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: veritas_sources
+      AI_ENGINE_URL: http://engine:8000
+      AI_ENGINE_MODEL: gpt2
+      EMBEDDING_PROVIDER: local
+      SEMANTIC_SIMILARITY_THRESHOLD: "0.6"
+      ANALYSIS_CONCURRENCY: "2"
+    command: ["npx", "tsx", "src/worker.ts"]
+
+volumes:
+  veritas-db:
+  veritas-redis:
+  veritas-qdrant:
