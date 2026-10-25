@@ -1,0 +1,96 @@
+services:
+  # PostgreSQL database
+  - name: canopy-postgres
+    type: addon
+    addon_type: postgresql
+    plan: free
+    version: "16"
+    region: us-east-1
+
+  # Redis for queue mode
+  - name: canopy-redis
+    type: addon
+    addon_type: redis
+    plan: free
+    version: "7"
+    region: us-east-1
+
+  # Web service (Next.js)
+  - name: canopy-web
+    type: service
+    build:
+      type: dockerfile
+      dockerfile_path: Dockerfile
+      build_context: .
+    runtime: docker
+    repository: github.com/alimehr755-byte/canopy-engine
+    branch: main
+    region: us-east-1
+    plan: free
+    port: 3000
+    health_check_path: /api/health
+    environment_variables:
+      - name: DATABASE_URL
+        value: ${canopy-postgres.DATABASE_URL}
+      - name: REDIS_URL
+        value: ${canopy-redis.REDIS_URL}
+      - name: ANALYSIS_MODE
+        value: "queue"
+      - name: SEMANTIC_SIMILARITY_THRESHOLD
+        value: "0.6"
+      - name: NODE_ENV
+        value: "production"
+      - name: PORT
+        value: "3000"
+    scaling:
+      min_replicas: 1
+      max_replicas: 1
+
+  # Worker service (BullMQ queue processor)
+  - name: canopy-worker
+    type: service
+    build:
+      type: dockerfile
+      dockerfile_path: Dockerfile
+      build_context: .
+    runtime: docker
+    repository: github.com/alimehr755-byte/canopy-engine
+    branch: main
+    region: us-east-1
+    plan: free
+    # Workers don't expose ports
+    environment_variables:
+      - name: DATABASE_URL
+        value: ${canopy-postgres.DATABASE_URL}
+      - name: REDIS_URL
+        value: ${canopy-redis.REDIS_URL}
+      - name: ANALYSIS_MODE
+        value: "queue"
+      - name: SEMANTIC_SIMILARITY_THRESHOLD
+        value: "0.6"
+      - name: NODE_ENV
+        value: "production"
+    scaling:
+      min_replicas: 1
+      max_replicas: 1
+
+  # Python AI engine
+  - name: canopy-engine
+    type: service
+    build:
+      type: dockerfile
+      dockerfile_path: python-engine/Dockerfile
+      build_context: python-engine
+    runtime: docker
+    repository: github.com/alimehr755-byte/canopy-engine
+    branch: main
+    region: us-east-1
+    plan: free
+    port: 8000
+    health_check_path: /health
+    environment_variables:
+      - name: PYTHONUNBUFFERED
+        value: "1"
+    scaling:
+      min_replicas: 1
+      max_replicas: 1
