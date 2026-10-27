@@ -147,3 +147,15 @@ model CitationRule {
 
   @@unique([institution, style])
 }
+
+model Webhook {
+  id        String   @id @default(uuid()) @db.Uuid
+  url       String
+  secret    String?
+  events    String[] @default(["report.completed"])
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active])
+}

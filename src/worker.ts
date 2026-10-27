@@ -2,6 +2,7 @@ import { Worker } from "bullmq";
 import { analyzeSubmission } from "./lib/analyzer";
 import { prisma } from "./lib/prisma";
 import { redisConnection } from "./lib/queue";
+import { deliverWebhook } from "./lib/webhook";
 
 const connection = redisConnection;
 
@@ -27,8 +28,22 @@ const worker = new Worker<{ submissionId: string }>(
   { connection, concurrency: CONCURRENCY }
 );
 
-worker.on("completed", (job) => {
+worker.on("completed", async (job) => {
   console.log(`[worker] analysis ${job.id} completed`);
+  const { submissionId } = job.data;
+  try {
+    const sub = await prisma.submission.findUnique({
+      where: { id: submissionId },
+      select: { id: true, status: true },
+    });
+    if (sub?.status === "COMPLETED") {
+      const webhooks = await prisma.webhook.findMany({ where: { active: true } });
+      const data = { submissionId: sub.id, status: sub.status };
+      await Promise.allSettled(webhooks.map((w) => deliverWebhook(w.id, "report.completed", data)));
+    }
+  } catch (e) {
+    console.error("[worker] webhook dispatch error", e);
+  }
 });
 
 worker.on("failed", (job, error) => {
