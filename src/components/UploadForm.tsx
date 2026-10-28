@@ -3,10 +3,10 @@
 import { useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, FileText, Loader2, UploadCloud, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileArchive, FileText, Loader2, UploadCloud, X } from "lucide-react";
 import { cn } from "@/lib/format";
 
-type Mode = "file" | "text";
+type Mode = "file" | "text" | "batch";
 
 const pipeline = [
   "Extracting and sanitizing text",
@@ -15,12 +15,30 @@ const pipeline = [
   "Scoring AI writing signals"
 ];
 
+interface BatchFileResult {
+  fileName: string;
+  ok: boolean;
+  submissionId?: string;
+  error?: string;
+}
+
+interface BatchResult {
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: BatchFileResult[];
+}
+
 export function UploadForm() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
+  const batchInputRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<Mode>("file");
   const [file, setFile] = useState<File | null>(null);
+  const [batchFile, setBatchFile] = useState<File | null>(null);
+  const [batchResult, setBatchResult] = useState<BatchResult | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [batchDragging, setBatchDragging] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,6 +54,23 @@ export function UploadForm() {
     setFile(candidate);
   }
 
+  function acceptBatchFile(candidate: File | null | undefined): void {
+    if (!candidate) {
+      return;
+    }
+    if (!candidate.name.toLowerCase().endsWith(".zip")) {
+      setError("Batch upload needs a .zip archive of documents.");
+      return;
+    }
+    if (candidate.size > 60 * 1024 * 1024) {
+      setError("Archive exceeds the 60 MB batch limit.");
+      return;
+    }
+    setError(null);
+    setBatchResult(null);
+    setBatchFile(candidate);
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     if (pending) {
@@ -44,6 +79,37 @@ export function UploadForm() {
     setError(null);
 
     const form = new FormData(event.currentTarget);
+    if (mode === "batch") {
+      if (!batchFile) {
+        setError("Choose a .zip archive of documents to upload.");
+        return;
+      }
+      form.set("file", batchFile);
+      setPending(true);
+      setError(null);
+      setBatchResult(null);
+      try {
+        const response = await fetch("/api/submit/batch", { method: "POST", body: form });
+        const payload = (await response.json()) as BatchResult & { error?: string };
+        if (payload.results) {
+          setBatchResult(payload);
+          if (payload.succeeded > 0) {
+            router.refresh();
+          }
+          if (payload.failed > 0) {
+            setError(`${payload.failed} of ${payload.total} documents failed.`);
+          }
+        } else {
+          throw new Error(payload.error ?? "Batch upload failed.");
+        }
+      } catch (batchError) {
+        setError(batchError instanceof Error ? batchError.message : "Batch upload failed.");
+      } finally {
+        setPending(false);
+      }
+      return;
+    }
+
     if (mode === "file" && !file) {
       setError("Choose a PDF, DOCX, TXT or Markdown file to analyze.");
       return;
@@ -108,6 +174,16 @@ export function UploadForm() {
             )}
           >
             Paste
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("batch")}
+            className={cn(
+              "rounded-md px-2.5 py-1 transition",
+              mode === "batch" ? "bg-white text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-800"
+            )}
+          >
+            Batch
           </button>
         </div>
       </div>
@@ -194,6 +270,112 @@ export function UploadForm() {
               </button>
             )}
           </div>
+        ) : mode === "batch" ? (
+          <div className="space-y-3">
+            <div
+              onDragOver={(event) => {
+                event.preventDefault();
+                setBatchDragging(true);
+              }}
+              onDragLeave={() => setBatchDragging(false)}
+              onDrop={(event) => {
+                event.preventDefault();
+                setBatchDragging(false);
+                acceptBatchFile(event.dataTransfer.files[0]);
+              }}
+              className={cn(
+                "relative rounded-xl border-2 border-dashed px-4 py-8 text-center transition",
+                batchDragging
+                  ? "border-brand-500 bg-brand-500/5"
+                  : "border-ink-200 bg-ink-50/60 hover:border-ink-300"
+              )}
+            >
+              <input
+                ref={batchInputRef}
+                type="file"
+                accept=".zip,application/zip"
+                className="sr-only"
+                onChange={(event) => acceptBatchFile(event.target.files?.[0])}
+              />
+              {batchFile ? (
+                <div className="flex items-center justify-center gap-3">
+                  <FileArchive className="h-5 w-5 text-brand-500" aria-hidden="true" />
+                  <div className="text-left">
+                    <p className="text-sm font-medium text-ink-900">{batchFile.name}</p>
+                    <p className="text-xs text-ink-500">{(batchFile.size / (1024 * 1024)).toFixed(1)} MB</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBatchFile(null);
+                      setBatchResult(null);
+                      if (batchInputRef.current) {
+                        batchInputRef.current.value = "";
+                      }
+                    }}
+                    className="rounded-md p-1 text-ink-400 transition hover:bg-ink-100 hover:text-ink-700"
+                    aria-label="Remove archive"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => batchInputRef.current?.click()} className="group">
+                  <FileArchive className="mx-auto h-8 w-8 text-ink-400 transition group-hover:text-brand-500" />
+                  <p className="mt-2 text-sm font-medium text-ink-800">
+                    Drop a zip or <span className="text-brand-600">browse</span>
+                  </p>
+                  <p className="mt-1 text-xs text-ink-500">
+                    .txt, .md, .pdf, .docx inside one .zip · up to 50 documents · 60 MB
+                  </p>
+                </button>
+              )}
+            </div>
+
+            {batchResult ? (
+              <div className="rounded-lg border border-ink-200 bg-white px-3 py-2.5 text-xs">
+                <p className="mb-1.5 font-semibold text-ink-900">
+                  {batchResult.succeeded} of {batchResult.total} documents queued
+                  {batchResult.failed > 0 ? `, ${batchResult.failed} failed` : ""}
+                </p>
+                <ul className="max-h-44 space-y-1 overflow-y-auto">
+                  {batchResult.results.map((result) => (
+                    <li key={result.fileName} className="flex items-center gap-2">
+                      {result.ok ? (
+                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                      ) : (
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500" />
+                      )}
+                      <span className={cn("truncate", result.ok ? "text-ink-700" : "text-ink-900")}>
+                        {result.fileName}
+                      </span>
+                      {!result.ok && result.error ? (
+                        <span className="truncate text-ink-400">— {result.error}</span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {pending ? (
+              <ul className="space-y-1.5 rounded-lg bg-ink-50 px-3 py-2 text-[11px] text-ink-500">
+                <li className="flex items-center gap-2">
+                  <span className="h-1 w-1 animate-pulse-soft rounded-full bg-brand-500" />
+                  Uploading and queueing the archive…
+                </li>
+              </ul>
+            ) : null}
+
+            <button
+              type="submit"
+              disabled={pending}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-ink-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {pending ? "Uploading batch…" : "Upload batch"}
+            </button>
+          </div>
         ) : (
           <textarea
             name="text"
@@ -210,16 +392,18 @@ export function UploadForm() {
           </div>
         ) : null}
 
-        <button
-          type="submit"
-          disabled={pending}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-ink-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-70"
-        >
-          {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          {pending ? "Analyzing submission…" : "Run integrity analysis"}
-        </button>
+        {mode !== "batch" ? (
+          <>
+            <button
+              type="submit"
+              disabled={pending}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-ink-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {pending ? "Analyzing submission…" : "Run integrity analysis"}
+            </button>
 
-        {pending ? (
+            {pending? (
           <ul className="space-y-1.5 rounded-lg bg-ink-50 px-3 py-2 text-[11px] text-ink-500">
             {pipeline.map((step, index) => (
               <li key={step} className="flex items-center gap-2">
@@ -228,6 +412,8 @@ export function UploadForm() {
               </li>
             ))}
           </ul>
+            ) : null}
+          </>
         ) : (
           <p className="text-[11px] leading-5 text-ink-400">
             Documents are sanitized for zero-width characters and homoglyphs before matching. Quoted
