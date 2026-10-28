@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Bot, FileSearch, Files, Users } from "lucide-react";
+import { ArrowLeft, Bot, FileSearch, Files, FileDown, Users } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { prisma } from "@/lib/prisma";
 import { cn, formatDate, formatNumber, formatPercent, statusLabel } from "@/lib/format";
@@ -82,8 +82,30 @@ export default async function RosterPage({ params }: { params: Promise<{ id: str
 
         <section className="mt-6 overflow-hidden rounded-2xl border border-ink-200/80 bg-white shadow-paper">
           <div className="border-b border-ink-100 px-5 py-4">
-            <h2 className="text-sm font-semibold tracking-tight text-ink-900">Class roster</h2>
-            <p className="text-xs text-ink-500">Highest recorded scores per student.</p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-semibold tracking-tight text-ink-900">Class roster</h2>
+                <p className="text-xs text-ink-500">Highest recorded scores per student.</p>
+              </div>
+              {completed.length > 0 ? (
+                <div className="flex items-center gap-1.5">
+                  <a
+                    href={`/api/assignments/${assignment.id}/bulk-pdf`}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-xs font-medium text-ink-700 transition hover:border-ink-300 hover:bg-ink-50"
+                  >
+                    <FileDown className="h-3.5 w-3.5" />
+                    Export all PDFs (.zip)
+                  </a>
+                  <a
+                    href={`/api/assignments/${assignment.id}/bulk-pdf?format=merged`}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-xs font-medium text-ink-700 transition hover:border-ink-300 hover:bg-ink-50"
+                  >
+                    <FileDown className="h-3.5 w-3.5" />
+                    Merged PDF
+                  </a>
+                </div>
+              ) : null}
+            </div>
           </div>
           {students.length === 0 ? (
             <p className="px-5 py-10 text-center text-sm text-ink-500">
