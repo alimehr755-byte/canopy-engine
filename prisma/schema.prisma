@@ -82,11 +82,23 @@ model Submission {
   matches        Match[]
   fingerprints   Fingerprint[]
   aiResult       AiAnalysisResult?
+  shareLinks     ShareLink[]
 
   @@index([authorId])
   @@index([assignmentId])
   @@index([status, createdAt])
   @@index([createdAt])
+}
+
+model ShareLink {
+  id           String   @id @default(uuid()) @db.Uuid
+  tokenHash    String   @unique
+  submissionId String   @db.Uuid
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
 }
 
 model Match {
