@@ -39,6 +39,12 @@ export function AppHeader({ compact = false }: { compact?: boolean }) {
           >
             System status
           </a>
+          <Link
+            href="/settings"
+            className="rounded-md px-3 py-1.5 text-ink-300 transition hover:bg-ink-800/70 hover:text-white"
+          >
+            Settings
+          </Link>
           <span className="ml-2 grid h-8 w-8 place-items-center rounded-full bg-ink-800 text-xs font-semibold text-ink-200 ring-1 ring-ink-700">
             MC
           </span>
