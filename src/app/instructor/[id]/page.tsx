@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Bot, FileSearch, Files, FileDown, Users } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
+import { ComparePicker } from "@/components/ComparePicker";
 import { prisma } from "@/lib/prisma";
 import { cn, formatDate, formatNumber, formatPercent, statusLabel } from "@/lib/format";
 
@@ -143,6 +144,17 @@ export default async function RosterPage({ params }: { params: Promise<{ id: str
             </div>
           )}
         </section>
+
+        {completed.length >= 2 ? (
+          <section className="mt-6">
+            <ComparePicker
+              submissions={completed.map((submission) => ({
+                id: submission.id,
+                title: submission.title,
+              }))}
+            />
+          </section>
+        ) : null}
 
         <section className="mt-6 overflow-hidden rounded-2xl border border-ink-200/80 bg-white shadow-paper">
           <div className="border-b border-ink-100 px-5 py-4">

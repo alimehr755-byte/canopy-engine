@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, BookDown, Calendar, FileText, Printer, UserRound } from "lucide-react";
+import { ArrowLeft, BookDown, Calendar, Check, FileText, Link2, Loader2, Printer, UserRound } from "lucide-react";
 import { AiDetectionPanel } from "@/components/AiDetectionPanel";
 import { FilterToolbar } from "@/components/FilterToolbar";
 import { FlagsPanel } from "@/components/FlagsPanel";
@@ -15,6 +15,26 @@ import type { ReportDTO } from "@/lib/types";
 export function ReportViewer({ report }: { report: ReportDTO }) {
   const [activeMatchId, setActiveMatchId] = useState<string | null>(null);
   const [showAi, setShowAi] = useState(true);
+  const [shareState, setShareState] = useState<"idle" | "pending" | "copied" | "error">("idle");
+
+  async function shareReport() {
+    if (shareState === "pending") return;
+    setShareState("pending");
+    try {
+      const res = await fetch(`/api/report/${report.id}/share`, { method: "POST" });
+      const payload = (await res.json()) as { sharePath?: string; error?: string };
+      if (!res.ok || !payload.sharePath) {
+        throw new Error(payload.error ?? "Could not create share link.");
+      }
+      const absolute = `${window.location.origin}${payload.sharePath}`;
+      await navigator.clipboard.writeText(absolute).catch(() => undefined);
+      setShareState("copied");
+      setTimeout(() => setShareState("idle"), 4000);
+    } catch {
+      setShareState("error");
+      setTimeout(() => setShareState("idle"), 4000);
+    }
+  }
 
   return (
     <main className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
@@ -37,6 +57,22 @@ export function ReportViewer({ report }: { report: ReportDTO }) {
             <BookDown className="h-3.5 w-3.5" />
             Download PDF
           </a>
+          <button
+            type="button"
+            onClick={shareReport}
+            disabled={shareState === "pending"}
+            className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 bg-white px-2.5 py-1 text-[11px] font-medium text-ink-600 transition hover:border-ink-300 hover:text-ink-900 disabled:opacity-60"
+          >
+            {shareState === "pending" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : shareState === "copied" ? (
+              <Check className="h-3.5 w-3.5 text-emerald-600" />
+            ) : shareState === "error" ? (
+              <span className="text-red-600">Failed</span>
+            ) : null}
+            <Link2 className={shareState === "pending" || shareState === "error" ? "hidden" : "h-3.5 w-3.5"} />
+            {shareState === "copied" ? "Link copied" : shareState === "error" ? "Try again" : "Share link"}
+          </button>
           <button
             type="button"
             onClick={() => window.print()}
