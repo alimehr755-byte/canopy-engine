@@ -1,0 +1,38 @@
+# Self-contained Veritas Engine - single container with all services
+# Usage: docker compose -f docker-compose.local.yml up -d --build
+# Access: http://localhost:3000 (web), http://localhost:8000 (python engine)
+
+version: '3.8'
+
+services:
+  veritas:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    container_name: veritas-local
+    ports:
+      - "3000:3000"   # Next.js web
+      - "8000:8000"   # Python AI engine
+      - "6379:6379"   # Redis
+      - "5432:5432"   # PostgreSQL
+    volumes:
+      - veritas-postgres:/var/lib/postgresql/data
+      - veritas-redis:/var/lib/redis
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres@localhost:5432/veritas?schema=public
+      - REDIS_URL=redis://localhost:6379
+      - ANALYSIS_MODE=queue
+      - SEMANTIC_SIMILARITY_THRESHOLD=0.6
+      - AI_ENGINE_URL=http://localhost:8000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  veritas-postgres:
+  veritas-redis:

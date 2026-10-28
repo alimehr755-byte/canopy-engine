@@ -12,7 +12,9 @@
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "worker": "tsx src/worker.ts",
-    "smoke": "tsx scripts/smoke.mts"
+    "smoke": "tsx scripts/smoke.mts",
+    "local": "powershell -ExecutionPolicy Bypass -File scripts/local-dev.ps1",
+    "local:clean": "powershell -ExecutionPolicy Bypass -File scripts/local-dev.ps1 -Clean"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",

@@ -76,6 +76,32 @@ ANALYSIS_MODE=queue npx tsx src/worker.ts   # separate terminal
 | `/api/report/{id}/pdf` | GET | PDF download honoring current filters |
 | `/api/assignments` | GET/POST | Instructor assignment management |
 | `/api/assignments/{id}` | GET | Roster + submissions summary |
+| `/api/keys` | GET/POST | Create + list API keys (raw key returned once at creation) |
+| `/api/keys/{id}` | POST/DELETE | Revoke (`{"revoked": true}`) or delete a key |
+| `/api/webhooks` | GET/POST | Register + list webhooks (`report.completed` events, HMAC-signed) |
+| `/api/webhooks/{id}` | POST/DELETE | Activate/deactivate (`{"active": false}`) or delete |
+| `/api/v1/submit` | POST | **API-key protected** submit; scope `submit:write` |
+| `/api/v1/report/{id}` | GET | **API-key protected** report; scope `report:read` |
+| `/api/v1/assignments` | GET/POST | **API-key protected** assignments; scopes `submit:read` / `submit:write` |
+
+### Programmatic access (API keys)
+
+```bash
+# 1. Create a key (save the raw key — it is shown exactly once)
+curl -X POST http://localhost:3000/api/keys \
+  -H "Content-Type: application/json" \
+  -d '{"name": "lms-integration"}'
+
+# 2. Submit and fetch reports with the key
+curl -X POST http://localhost:3000/api/v1/submit \
+  -H "x-api-key: vk_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{"text": "student work goes here", "title": "Essay 1"}'
+
+curl http://localhost:3000/api/v1/report/<submissionId> -H "x-api-key: vk_live_..."
+```
+
+Keys are stored as SHA-256 hashes; scopes: `submit:read`, `submit:write`, `report:read`. Webhooks receive `POST` payloads with an `X-Veritas-Signature: sha256=<hmac>` header when a report completes.
 
 ## Testing
 

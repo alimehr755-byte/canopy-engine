@@ -1,0 +1,140 @@
+# Self-contained Veritas Engine - all services in one image
+# Build: docker build -f Dockerfile.local -t veritas-local .
+# Run: docker run -p 3000:3000 -p 8000:8000 -p 6379:6379 -p 5432:5432 veritas-local
+
+FROM node:24-alpine AS base
+
+# Install system dependencies
+RUN apk add --no-cache \
+    postgresql16 \
+    postgresql16-client \
+    redis \
+    python3 \
+    py3-pip \
+    supervisor \
+    tini \
+    bash \
+    curl \
+    ca-certificates
+
+# Create app directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+COPY prisma ./prisma/
+
+# Install Node dependencies
+RUN npm ci --ignore-scripts
+
+# Generate Prisma client
+RUN npx prisma generate
+
+# Copy application code
+COPY . .
+
+# Build Next.js
+RUN npm run build
+
+# Python engine setup
+WORKDIR /app/python-engine
+RUN pip install --no-cache-dir -r requirements.txt
+WORKDIR /app
+
+# PostgreSQL setup
+RUN mkdir -p /var/lib/postgresql/data && \
+    chown -R postgres:postgres /var/lib/postgresql/data && \
+    su postgres -c "initdb -D /var/lib/postgresql/data --auth-local=trust --auth-host=trust"
+
+# Redis config
+RUN mkdir -p /var/lib/redis && chown -R redis:redis /var/lib/redis
+
+# Supervisor config for multi-process
+COPY <<EOF /etc/supervisor/conf.d/supervisord.conf
+[supervisord]
+nodaemon=true
+user=root
+logfile=/var/log/supervisor/supervisord.log
+pidfile=/var/run/supervisord.pid
+
+[program:postgresql]
+command=su postgres -c "postgres -D /var/lib/postgresql/data -c listen_addresses=* -c port=5432"
+user=postgres
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/supervisor/postgresql.log
+stderr_logfile=/var/log/supervisor/postgresql.err.log
+
+[program:redis]
+command=redis-server --bind 0.0.0.0 --port 6379 --dir /var/lib/redis --appendonly yes
+user=redis
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/supervisor/redis.log
+stderr_logfile=/var/log/supervisor/redis.err.log
+
+[program:python-engine]
+command=uvicorn main:app --host 0.0.0.0 --port 8000
+directory=/app/python-engine
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/supervisor/python-engine.log
+stderr_logfile=/var/log/supervisor/python-engine.err.log
+environment=PYTHONUNBUFFERED=1
+
+[program:web]
+command=npm run start
+directory=/app
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/supervisor/web.log
+stderr_logfile=/var/log/supervisor/web.err.log
+environment=NODE_ENV=production,PORT=3000,DATABASE_URL=postgresql://postgres@localhost:5432/veritas?schema=public,REDIS_URL=redis://localhost:6379,ANALYSIS_MODE=queue,SEMANTIC_SIMILARITY_THRESHOLD=0.6,AI_ENGINE_URL=http://localhost:8000
+
+[program:worker]
+command=npx tsx src/worker.ts
+directory=/app
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/supervisor/worker.log
+stderr_logfile=/var/log/supervisor/worker.err.log
+environment=NODE_ENV=production,DATABASE_URL=postgresql://postgres@localhost:5432/veritas?schema=public,REDIS_URL=redis://localhost:6379,ANALYSIS_MODE=queue,SEMANTIC_SIMILARITY_THRESHOLD=0.6,AI_ENGINE_URL=http://localhost:8000
+EOF
+
+# Init script to create database and seed
+COPY <<EOF /app/init.sh
+#!/bin/bash
+set -e
+
+# Wait for PostgreSQL
+until pg_isready -h localhost -p 5432 -U postgres; do
+  echo "Waiting for PostgreSQL..."
+  sleep 1
+done
+
+# Create database
+psql -h localhost -U postgres -c "CREATE DATABASE veritas;" 2>/dev/null || true
+
+# Run Prisma migrations
+cd /app
+npx prisma db push --skip-generate
+
+# Seed database
+npx tsx prisma/seed.ts
+
+echo "Initialization complete"
+EOF
+
+RUN chmod +x /app/init.sh
+
+# Create log directory
+RUN mkdir -p /var/log/supervisor
+
+# Expose ports
+EXPOSE 3000 8000 6379 5432
+
+# Use tini for proper signal handling
+ENTRYPOINT ["/sbin/tini", "--"]
+
+# Start supervisor
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
