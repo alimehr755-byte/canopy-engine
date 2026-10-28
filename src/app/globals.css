@@ -5,6 +5,39 @@
 :root {
   --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
   color-scheme: light;
+
+  --ink-950: 11 18 32;
+  --ink-900: 17 27 46;
+  --ink-800: 26 39 64;
+  --ink-700: 37 54 86;
+  --ink-600: 51 73 111;
+  --ink-500: 74 98 140;
+  --ink-400: 113 137 173;
+  --ink-300: 162 180 205;
+  --ink-200: 203 214 229;
+  --ink-100: 230 236 244;
+  --ink-50: 243 246 250;
+  --brand-600: 194 65 12;
+  --brand-500: 234 88 12;
+  --brand-400: 249 115 22;
+  --paper: 251 250 247;
+}
+
+html.dark {
+  color-scheme: dark;
+
+  --ink-950: 4 8 16;
+  --ink-900: 226 232 244;
+  --ink-800: 15 23 42;
+  --ink-700: 203 213 225;
+  --ink-600: 176 190 210;
+  --ink-500: 148 163 184;
+  --ink-400: 119 138 168;
+  --ink-300: 71 89 117;
+  --ink-200: 39 51 75;
+  --ink-100: 23 33 54;
+  --ink-50: 12 18 33;
+  --paper: 10 15 28;
 }
 
 html,
@@ -14,6 +47,13 @@ body {
 
 body {
   @apply bg-ink-50 text-ink-900 antialiased;
+}
+
+.shadow-paper {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px -18px rgba(0, 0, 0, 0.6);
+}
+html:not(.dark) .shadow-paper {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 12px 32px -18px rgba(15, 23, 42, 0.35);
 }
 
 ::selection {
@@ -94,6 +134,35 @@ body {
 }
 .grade-4 {
   @apply bg-red-100 text-red-900 ring-red-600/20;
+}
+
+html.dark .grade-0 {
+  @apply bg-emerald-500/15 text-emerald-300 ring-emerald-400/30;
+}
+html.dark .grade-1 {
+  @apply bg-sky-500/15 text-sky-300 ring-sky-400/30;
+}
+html.dark .grade-2 {
+  @apply bg-amber-500/15 text-amber-300 ring-amber-400/30;
+}
+html.dark .grade-3 {
+  @apply bg-orange-500/15 text-orange-300 ring-orange-400/30;
+}
+html.dark .grade-4 {
+  @apply bg-red-500/15 text-red-300 ring-red-400/30;
+}
+
+html.dark .match-exact {
+  @apply bg-red-500/25 decoration-red-400;
+}
+html.dark .match-paraphrase {
+  @apply bg-amber-500/25 decoration-amber-400;
+}
+html.dark .ai-flag {
+  @apply bg-violet-500/25;
+}
+html.dark .exclusion-bibliography {
+  @apply bg-slate-600/40 text-ink-500;
 }
 
 @media print {

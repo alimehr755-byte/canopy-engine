@@ -1,29 +1,19 @@
 import type { Config } from "tailwindcss";
 
+function tripletVars(prefix: string, shades: string[]): Record<string, string> {
+  return Object.fromEntries(
+    shades.map((shade) => [shade, `rgb(var(--${prefix}-${shade}) / <alpha-value>)`])
+  );
+}
+
 const config: Config = {
   content: ["./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        ink: {
-          950: "#0b1220",
-          900: "#111b2e",
-          800: "#1a2740",
-          700: "#253656",
-          600: "#33496f",
-          500: "#4a628c",
-          400: "#7189ad",
-          300: "#a2b4cd",
-          200: "#cbd6e5",
-          100: "#e6ecf4",
-          50: "#f3f6fa"
-        },
-        brand: {
-          600: "#c2410c",
-          500: "#ea580c",
-          400: "#f97316"
-        },
-        paper: "#fbfaf7"
+        ink: tripletVars("ink", ["950", "900", "800", "700", "600", "500", "400", "300", "200", "100", "50"]),
+        brand: tripletVars("brand", ["600", "500", "400"]),
+        paper: "rgb(var(--paper) / <alpha-value>)"
       },
       fontFamily: {
         sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],

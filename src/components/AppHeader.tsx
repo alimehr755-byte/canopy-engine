@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ShieldCheck } from "lucide-react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export function AppHeader({ compact = false }: { compact?: boolean }) {
   return (
@@ -45,6 +46,7 @@ export function AppHeader({ compact = false }: { compact?: boolean }) {
           >
             Settings
           </Link>
+          <ThemeToggle />
           <span className="ml-2 grid h-8 w-8 place-items-center rounded-full bg-ink-800 text-xs font-semibold text-ink-200 ring-1 ring-ink-700">
             MC
           </span>
