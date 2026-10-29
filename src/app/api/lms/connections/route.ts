@@ -1,25 +1,32 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { LmsError, canvasSelf, normalizeBaseUrl } from "@/lib/lms/canvas";
+import { LmsError, normalizeBaseUrl } from "@/lib/lms/types";
+import { canvasClient } from "@/lib/lms/canvas";
+import { moodleClient } from "@/lib/lms/moodle";
+import { googleClient } from "@/lib/lms/google";
+import type { LmsClient } from "@/lib/lms/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function clientFor({ baseUrl, token, platform }: { platform: string; baseUrl: string; token: string }): LmsClient {
+  const opts = { baseUrl, token };
+  if (platform === "MOODLE") {
+    return moodleClient(opts);
+  }
+  if (platform === "GOOGLE") {
+    return googleClient(opts);
+  }
+  return canvasClient(opts);
+}
 
 export async function GET(): Promise<NextResponse> {
   try {
     const connections = await prisma.lmsConnection.findMany({
       orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        platform: true,
-        baseUrl: true,
-        name: true,
-        lastSyncAt: true,
-        externalRef: true,
-        createdAt: true,
-      },
+      select: { id: true, platform: true, baseUrl: true, name: true, lastSyncAt: true, createdAt: true },
     });
-    return NextResponse.json({ connections });
+    return NextResponse.json({ connections: connections.map(({ createdAt, ...rest }) => ({ ...rest, createdAt: createdAt.toISOString() })) });
   } catch (error) {
     console.error("lms list error", error);
     return NextResponse.json({ error: "internal error" }, { status: 500 });
@@ -27,8 +34,9 @@ export async function GET(): Promise<NextResponse> {
 }
 
 /**
- * Connect or replace the single LMS connection. The token is stored locally
- * (this is a first-party, self-hosted integration) but never returned.
+ * Connect or replace the single LMS connection (Canvas/Moodle token flow).
+ * Google uses the OAuth start/callback routes instead. The token is stored
+ * locally; every LMS call is outbound so no public URL is required.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const body = await req.json().catch(() => ({}));
@@ -39,6 +47,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     name?: string;
   };
 
+  if (platform === "GOOGLE") {
+    return NextResponse.json({ error: "Google Classroom uses the sign-in flow — use the Google button." }, { status: 400 });
+  }
   if (!baseUrl || !token) {
     return NextResponse.json({ error: "baseUrl and token are required." }, { status: 400 });
   }
@@ -48,17 +59,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   try {
     const normalized = normalizeBaseUrl(baseUrl);
-    // Render the token useless before it leaves: trim newlines, require min length.
     const cleanToken = token.trim();
     if (cleanToken.length < 10) {
       return NextResponse.json({ error: "That token looks too short to be valid." }, { status: 400 });
     }
 
-    // Verify the token against Canvas before saving anything.
+    const chosenPlatform = platform === "MOODLE" ? "MOODLE" : "CANVAS";
+    const client = clientFor({ platform: chosenPlatform, baseUrl: normalized, token: cleanToken });
+
+    // Verify the token before saving anything.
     let accountName: string;
     try {
-      const self = await canvasSelf({ baseUrl: normalized, token: cleanToken });
-      accountName = self.name;
+      accountName = await client.self();
     } catch (error) {
       if (error instanceof LmsError) {
         return NextResponse.json({ error: error.message }, { status: error.status });
@@ -67,14 +79,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const existing = await prisma.lmsConnection.findFirst();
+    const data = {
+      platform: chosenPlatform as "CANVAS" | "MOODLE",
+      baseUrl: normalized,
+      token: cleanToken,
+      name: name ?? accountName,
+    };
     const connection = existing
-      ? await prisma.lmsConnection.update({
-          where: { id: existing.id },
-          data: { platform: platform === "MOODLE" ? "MOODLE" : "CANVAS", baseUrl: normalized, token: cleanToken, name: name ?? accountName },
-        })
-      : await prisma.lmsConnection.create({
-          data: { platform: platform === "MOODLE" ? "MOODLE" : "CANVAS", baseUrl: normalized, token: cleanToken, name: name ?? accountName },
-        });
+      ? await prisma.lmsConnection.update({ where: { id: existing.id }, data })
+      : await prisma.lmsConnection.create({ data });
 
     return NextResponse.json(
       {

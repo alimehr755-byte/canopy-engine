@@ -8,7 +8,10 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-export default async function SettingsPage() {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const params = await searchParams;
+  const rawError = params.google_error;
+  const initialGoogleError = typeof rawError === "string" ? rawError : null;
   const [webhooks, apiKeys, lmsConnection] = await Promise.all([
     prisma.webhook.findMany({ orderBy: { createdAt: "desc" } }),
     prisma.apiKey.findMany({ orderBy: { createdAt: "desc" } }),
@@ -45,11 +48,13 @@ export default async function SettingsPage() {
              </p>
            </div>
            <LmsManager
+             googleConfigured={Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)}
+             initialError={initialGoogleError}
              initialConnection={
                lmsConnection
                  ? {
                      id: lmsConnection.id,
-                     platform: "CANVAS",
+                     platform: lmsConnection.platform,
                      baseUrl: lmsConnection.baseUrl,
                      name: lmsConnection.name,
                      lastSyncAt: lmsConnection.lastSyncAt ? lmsConnection.lastSyncAt.toISOString() : null,

@@ -1,52 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { canvasAssignments, canvasCourses, canvasSelf, LmsError } from "@/lib/lms/canvas";
+import { LmsError } from "@/lib/lms/types";
+import { activeLmsClient } from "@/lib/lms";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Outbound proxy used by settings UI:
+ * Outbound browse proxy used by settings UI (works on any connected platform):
  *   GET /api/lms/browse                      -> account name (sanity)
- *   GET /api/lms/browse?type=courses         -> teacher courses
+ *   GET /api/lms/browse?type=courses         -> courses
  *   GET /api/lms/browse?type=assignments&courseId=...
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    const connection = await prisma.lmsConnection.findFirst();
-    if (!connection) {
-      return NextResponse.json({ error: "No LMS connection configured. Connect first." }, { status: 400 });
-    }
-    const opts = { baseUrl: connection.baseUrl, token: connection.token };
+    const { client } = await activeLmsClient();
     const url = new URL(req.url);
-    const type = url.searchParams.get("type") ?? "courses";
+    const type = url.searchParams.get("type") ?? "self";
 
     if (type === "self") {
-      const self = await canvasSelf(opts);
-      return NextResponse.json({ name: self.name });
+      return NextResponse.json({ name: await client.self() });
     }
 
     if (type === "courses") {
-      const courses = await canvasCourses(opts);
-      return NextResponse.json({
-        courses: courses.map((course) => ({ id: course.id, name: course.name, code: course.code ?? null })),
-      });
+      const courses = await client.courses();
+      return NextResponse.json({ courses });
     }
 
     if (type === "assignments") {
-      const courseId = Number(url.searchParams.get("courseId"));
-      if (!Number.isFinite(courseId) || courseId <= 0) {
+      const courseId = url.searchParams.get("courseId");
+      if (!courseId) {
         return NextResponse.json({ error: "courseId is required." }, { status: 400 });
       }
-      const assignments = await canvasAssignments(opts, courseId);
-      return NextResponse.json({
-        assignments: assignments.map((assignment) => ({
-          id: assignment.id,
-          name: assignment.name,
-          dueAt: assignment.due_at ?? null,
-          points: assignment.points_possible ?? null,
-        })),
-      });
+      const assignments = await client.assignments(courseId);
+      return NextResponse.json({ assignments });
     }
 
     return NextResponse.json({ error: "Unknown browse type." }, { status: 400 });

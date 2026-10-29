@@ -1,31 +1,16 @@
 const USER_AGENT = "Veritas-Engine-LMS/1.0";
 
+export { LmsError, lmsError, normalizeBaseUrl } from "./types";
+import { lmsError } from "./types";
+import type { LmsClient, LmsImportItem } from "./types";
+
 export interface LmsFetchOptions {
   baseUrl: string;
   token: string;
 }
 
-export class LmsError extends Error {
-  status: number;
-  constructor(message: string, status: number) {
-    super(message);
-    this.name = "LmsError";
-    this.status = status;
-  }
-}
-
 function authHeaders(token: string): HeadersInit {
   return { Authorization: `Bearer ${token}`, "User-Agent": USER_AGENT };
-}
-
-export function normalizeBaseUrl(raw: string): string {
-  const trimmed = raw.trim().replace(/\/+$/u, "");
-  const withScheme = /^https?:\/\//iu.test(trimmed) ? trimmed : `https://${trimmed}`;
-  const parsed = new URL(withScheme);
-  if (!parsed.hostname) {
-    throw new LmsError("Invalid LMS base URL.", 400);
-  }
-  return withScheme;
 }
 
 export async function canvasGet<T>(opts: LmsFetchOptions, path: string): Promise<T> {
@@ -39,7 +24,7 @@ export async function canvasGet<T>(opts: LmsFetchOptions, path: string): Promise
     });
   } catch (error) {
     clearTimeout(timeout);
-    throw new LmsError(
+    throw lmsError(
       `Could not reach Canvas at ${opts.baseUrl}: ${error instanceof Error ? error.message : "network error"}`,
       502,
     );
@@ -47,13 +32,13 @@ export async function canvasGet<T>(opts: LmsFetchOptions, path: string): Promise
   clearTimeout(timeout);
 
   if (res.status === 401 || res.status === 403) {
-    throw new LmsError("Canvas rejected the API token (401/403).", 401);
+    throw lmsError("Canvas rejected the API token (401/403).", 401);
   }
   if (res.status === 404) {
-    throw new LmsError("Canvas resource not found — check the course/assignment id.", 404);
+    throw lmsError("Canvas resource not found â€” check the course/assignment id.", 404);
   }
   if (!res.ok) {
-    throw new LmsError(`Canvas request failed (${res.status}).`, 500);
+    throw lmsError(`Canvas request failed (${res.status}).`, 500);
   }
   return (await res.json()) as T;
 }
@@ -134,6 +119,64 @@ export async function canvasSubmissions(
   return all;
 }
 
+export function canvasClient(opts: LmsFetchOptions): LmsClient {
+  return {
+    self: async () => (await canvasSelf(opts)).name,
+    courses: async () =>
+      (await canvasCourses(opts)).map((course) => ({
+        id: String(course.id),
+        name: course.name,
+        code: course.code ?? null,
+      })),
+    assignments: async (courseId) =>
+      (await canvasAssignments(opts, Number(courseId))).map((assignment) => ({
+        id: String(assignment.id),
+        name: assignment.name,
+        dueAt: assignment.due_at ?? null,
+      })),
+    submissions: async (courseId, assignmentId) => {
+      const canvas = await canvasSubmissions(opts, Number(courseId), Number(assignmentId));
+      const items: LmsImportItem[] = [];
+      for (const sub of canvas) {
+        if (sub.workflow_state === "unsubmitted" && !(sub.attachments?.length ?? 0)) {
+          continue;
+        }
+        const person = sub.user
+          ? { name: sub.user.name, email: sub.user.login_id?.includes("@") ? sub.user.login_id : `canvas-${sub.user_id}@lms.local` }
+          : { name: `Canvas user ${sub.user_id}`, email: `canvas-${sub.user_id}@lms.local` };
+        const attachment = sub.attachments?.find((candidate) => candidate.url) ?? null;
+        if (attachment?.url) {
+          const lowerName = (attachment.filename ?? "").toLowerCase();
+          if (![".pdf", ".docx", ".txt", ".md"].some((ext) => lowerName.endsWith(ext))) {
+            continue;
+          }
+          const download = await downloadCanvasFile(opts, attachment.url);
+          items.push({
+            name: person.name,
+            email: person.email,
+            fileName: attachment.filename ?? null,
+            fileBuffer: download.buffer,
+            mediaType: download.contentType,
+            text: null,
+          });
+          continue;
+        }
+        if ((sub.body ?? "").trim()) {
+          items.push({
+            name: person.name,
+            email: person.email,
+            fileName: null,
+            fileBuffer: null,
+            mediaType: null,
+            text: sub.body ?? "",
+          });
+        }
+      }
+      return items;
+    },
+  };
+}
+
 export async function downloadCanvasFile(
   opts: LmsFetchOptions,
   url: string
@@ -145,14 +188,14 @@ export async function downloadCanvasFile(
     res = await fetch(url, { headers: authHeaders(opts.token), signal: controller.signal });
   } catch (error) {
     clearTimeout(timeout);
-    throw new LmsError(
+    throw lmsError(
       `Attachment download failed: ${error instanceof Error ? error.message : "network error"}`,
       502,
     );
   }
   clearTimeout(timeout);
   if (!res.ok) {
-    throw new LmsError(`Attachment download failed (${res.status}).`, 500);
+    throw lmsError(`Attachment download failed (${res.status}).`, 500);
   }
   const buffer = Buffer.from(await res.arrayBuffer());
   const disposition = res.headers.get("content-disposition") ?? "";
@@ -162,3 +205,4 @@ export async function downloadCanvasFile(
   const fileName = rawName ? decodeURIComponent(rawName) : null;
   return { buffer, contentType: res.headers.get("content-type"), fileName };
 }
+
