@@ -6,7 +6,7 @@ import { createSubmission } from "@/lib/submissions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 600;
+export const maxDuration = 300;
 
 const MAX_IMPORTS = 200;
 

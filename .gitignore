@@ -7,3 +7,5 @@ node_modules
 tsconfig.tsbuildinfo
 __pycache__/
 *.py[cod]
+.vercel
+.env*
