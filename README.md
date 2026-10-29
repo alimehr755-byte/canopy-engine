@@ -83,6 +83,15 @@ ANALYSIS_MODE=queue npx tsx src/worker.ts   # separate terminal
 | `/api/v1/submit` | POST | **API-key protected** submit; scope `submit:write` |
 | `/api/v1/report/{id}` | GET | **API-key protected** report; scope `report:read` |
 | `/api/v1/assignments` | GET/POST | **API-key protected** assignments; scopes `submit:read` / `submit:write` |
+| `/api/lms/connections` | GET/POST/DELETE | LMS connection (Canvas/Moodle token; Google via OAuth) |
+| `/api/lms/browse` | GET | Course/assignment listing from the connected LMS |
+| `/api/lms/sync` | POST | Import LMS submissions as local submissions (outbound pull) |
+| `/api/oauth/google/start` | GET | Begin Google Classroom OAuth flow |
+| `/api/compare?a={id}&b={id}` | GET | Cross-submission shared-source comparison |
+| `/api/report/{id}/share` | POST | Create time-limited public share link |
+| `/api/assignments/{id}/bulk-pdf` | GET | Bulk PDF export (zip or `?format=merged`) |
+| `/api/assignments/{id}/export-csv` | GET | Roster results CSV export |
+| `/api/submit/batch` | POST | Zip batch upload (≤50 docs, 60 MB) |
 
 ### Programmatic access (API keys)
 
@@ -102,6 +111,41 @@ curl http://localhost:3000/api/v1/report/<submissionId> -H "x-api-key: vk_live_.
 ```
 
 Keys are stored as SHA-256 hashes; scopes: `submit:read`, `submit:write`, `report:read`. Webhooks receive `POST` payloads with an `X-Veritas-Signature: sha256=<hmac>` header when a report completes.
+
+## LMS integrations (Canvas / Moodle / Google Classroom)
+
+All three platforms use an **outbound pull model**: the local Veritas install connects
+to the LMS API over the internet from your own machine — no public URL, no HTTPS on
+localhost, no tunnels. Configure on **Settings → Learning Management System**.
+
+### Canvas (token)
+1. Canvas → Account → Settings → *New Access Token* (instructor account).
+2. Paste the base URL (`https://your-school.instructure.com`) and token into the Canvas tab.
+3. Pick a course and an assignment, then **Import submissions** — each attached file
+   (`.pdf`, `.docx`, `.txt`, `.md`) or inline text body is downloaded and analyzed
+   into a local assignment named `<course> — <assignment>`.
+
+### Moodle (token)
+1. Site administration → Server → Web services → *Manage tokens* (or create a web
+   service and a token granting: `core_webservice_get_site_info`,
+   `core_course_get_courses`, `mod_assign_get_assignments`,
+   `mod_assign_get_submissions`, `core_enrol_get_enrolled_users`).
+2. Paste the site base URL and the token into the Moodle tab. File submissions and
+   onlinetext submissions are both imported.
+
+### Google Classroom (OAuth)
+One-time setup on the Google side:
+1. Google Cloud Console → APIs & Services → enable **Classroom API** and **Drive API**.
+2. Credentials → *Create OAuth client ID* → Web application; add
+   `http://localhost:3000/api/oauth/google/callback` as an authorized redirect URI.
+3. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env.local`, then use the
+   **Continue with Google** button in Settings. Access is refreshed automatically;
+   student Drive attachments are downloaded via `drive.readonly`.
+
+Endpoints backing this feature: `POST /api/lms/connections` (connect),
+`DELETE /api/lms/connections`, `GET /api/lms/browse?type=courses|assignments&courseId=…`,
+`POST /api/lms/sync` (`courseId`, `assignmentId`), plus
+`GET /api/oauth/google/start` → `GET /api/oauth/google/callback`.
 
 ## Testing
 
