@@ -101,6 +101,25 @@ model ShareLink {
   @@index([submissionId])
 }
 
+enum LmsPlatform {
+  CANVAS
+  MOODLE
+}
+
+model LmsConnection {
+  id          String      @id @default(uuid()) @db.Uuid
+  platform    LmsPlatform @default(CANVAS)
+  baseUrl     String
+  token       String
+  name        String?
+  lastSyncAt  DateTime?
+  externalRef String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([platform])
+}
+
 model Match {
   id                   String     @id @default(uuid()) @db.Uuid
   submissionId         String     @db.Uuid
