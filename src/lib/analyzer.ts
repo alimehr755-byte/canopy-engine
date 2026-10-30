@@ -147,6 +147,24 @@ async function loadCandidateFingerprints(
     }
   }
 
+  // Cross-institution peers: hashed fingerprint sets mirrored from the hub.
+  for (const group of chunkArray(uniqueHashes, 300)) {
+    const values = group.map((hash) => BigInt(hash));
+    const peerRows = await prisma.peerDoc.findMany({
+      where: { hashes: { hasSome: values } },
+      select: { docKey: true, hashes: true },
+      take: 1000
+    });
+    for (const row of peerRows) {
+      const key = `peer:${row.docKey}`;
+      const existing = bySubmission.get(key);
+      if (existing) {
+        continue;
+      }
+      bySubmission.set(key, new Set(row.hashes.map((hash) => hash.toString())));
+    }
+  }
+
   return bySubmission;
 }
 
@@ -155,8 +173,9 @@ async function loadCandidateMetadata(ids: readonly string[]): Promise<Map<string
   if (ids.length === 0) {
     return result;
   }
+  const localIds = ids.filter((id) => !id.startsWith("peer:"));
   const rows = await prisma.submission.findMany({
-    where: { id: { in: [...ids] } },
+    where: { id: { in: [...localIds] } },
     select: {
       id: true,
       title: true,
@@ -175,6 +194,27 @@ async function loadCandidateMetadata(ids: readonly string[]): Promise<Map<string
       corpusUrl: row.corpusUrl,
       corpusTitle: row.corpusTitle
     });
+  }
+
+  const peerIds = ids.filter((id) => id.startsWith("peer:")).map((id) => id.slice("peer:".length));
+  if (peerIds.length > 0) {
+    const peerRows = await prisma.peerDoc.findMany({
+      where: { docKey: { in: peerIds } },
+      select: { docKey: true, title: true, url: true, sourceType: true }
+    });
+    for (const row of peerRows) {
+      const sourceType = (["INTERNET", "PUBLICATION", "REPOSITORY"].includes(row.sourceType)
+        ? row.sourceType
+        : "REPOSITORY") as SourceType;
+      result.set(`peer:${row.docKey}`, {
+        id: `peer:${row.docKey}`,
+        title: row.title,
+        cleanText: "",
+        corpusType: sourceType,
+        corpusUrl: row.url,
+        corpusTitle: row.title
+      });
+    }
   }
   return result;
 }

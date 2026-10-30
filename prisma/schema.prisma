@@ -107,6 +107,45 @@ enum LmsPlatform {
   GOOGLE
 }
 
+/// Hub-side row (runs on the shared Vercel/Neon deployment): a single
+/// document's fingerprint set shared by one installation. No text is stored.
+model SyncDoc {
+  id             String     @id @default(uuid()) @db.Uuid
+  installationId String
+  docKey         String     @unique
+  title          String
+  url            String?
+  sourceType     SourceType @default(REPOSITORY)
+  hashes         BigInt[]
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([installationId])
+  @@index([updatedAt])
+}
+
+/// Local mirror of the fingerprints pulled from other installations.
+model PeerDoc {
+  id             String     @id @default(uuid()) @db.Uuid
+  installationId String
+  docKey         String     @unique
+  title          String
+  url            String?
+  sourceType     SourceType @default(REPOSITORY)
+  hashes         BigInt[]
+  createdAt      DateTime   @default(now())
+
+  @@index([installationId])
+}
+
+/// Single-row simple state (sync cursors etc.)
+model SyncState {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
 model LmsConnection {
   id          String      @id @default(uuid()) @db.Uuid
   platform    LmsPlatform @default(CANVAS)

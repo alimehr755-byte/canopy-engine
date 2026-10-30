@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, BookDown, Calendar, Check, FileText, Link2, Loader2, Printer, UserRound } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, BookDown, Calendar, Check, FileText, Globe, Link2, Loader2, Printer, UserRound } from "lucide-react";
 import { AiDetectionPanel } from "@/components/AiDetectionPanel";
 import { FilterToolbar } from "@/components/FilterToolbar";
 import { FlagsPanel } from "@/components/FlagsPanel";
@@ -13,9 +14,37 @@ import { formatDate, formatNumber } from "@/lib/format";
 import type { ReportDTO } from "@/lib/types";
 
 export function ReportViewer({ report }: { report: ReportDTO }) {
+  const router = useRouter();
   const [activeMatchId, setActiveMatchId] = useState<string | null>(null);
   const [showAi, setShowAi] = useState(true);
   const [shareState, setShareState] = useState<"idle" | "pending" | "copied" | "error">("idle");
+  const [scanState, setScanState] = useState<"idle" | "pending" | "done" | "error">("idle");
+  const [scanInfo, setScanInfo] = useState<string | null>(null);
+
+  async function scanWeb() {
+    if (scanState === "pending") return;
+    setScanState("pending");
+    setScanInfo(null);
+    try {
+      const res = await fetch(`/api/report/${report.id}/webscan`, { method: "POST" });
+      const payload = (await res.json()) as {
+        newMatches?: number;
+        sourcesFetched?: number;
+        corpusStored?: number;
+        error?: string;
+      };
+      if (!res.ok) {
+        throw new Error(payload.error ?? "Web scan failed.");
+      }
+      setScanInfo(
+        `${payload.newMatches ?? 0} match(es) from ${payload.sourcesFetched ?? 0} live sources · index +${payload.corpusStored ?? 0}`
+      );
+      setScanState("done");
+      router.refresh();
+    } catch {
+      setScanState("error");
+    }
+  }
 
   async function shareReport() {
     if (shareState === "pending") return;
@@ -50,6 +79,20 @@ export function ReportViewer({ report }: { report: ReportDTO }) {
           <span className="rounded-full border border-ink-200 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-ink-500">
             Feedback Studio view
           </span>
+          <button
+            type="button"
+            onClick={scanWeb}
+            disabled={scanState === "pending"}
+            className="inline-flex items-center gap-1.5 rounded-md border border-brand-200 bg-brand-50 px-2.5 py-1 text-[11px] font-medium text-brand-700 transition hover:border-brand-300 hover:bg-brand-100 disabled:opacity-60"
+          >
+            {scanState === "pending" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Globe className="h-3.5 w-3.5" />
+            )}
+            {scanState === "pending" ? "Scanning web…" : "Scan web"}
+          </button>
+          {scanInfo ? <span className="text-[10px] text-ink-400">{scanInfo}</span> : null}
           <a
             href={`/api/report/${report.id}/pdf`}
             className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 bg-white px-2.5 py-1 text-[11px] font-medium text-ink-600 transition hover:border-ink-300 hover:text-ink-900"
