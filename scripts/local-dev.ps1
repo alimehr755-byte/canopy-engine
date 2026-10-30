@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Start Veritas Engine locally with all services (Postgres, Redis, Python engine, Next.js, Worker)
 .DESCRIPTION
@@ -17,37 +17,26 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ROOT = Split-Path -Parent $MyInvocation.MyCommand.Definition | Split-Path -Parent
-$TEMP = "$env:TEMP\veritas-local"
-$PG_DIR = "$TEMP\pgsql"
-$PG_DATA = "$PG_DIR\data"
+# Fully local data lives inside the project (.data) - survives temp cleanups.
+$DATA = "$ROOT\.data"
+$PG_DIR = "$DATA\pgsql"
+$PG_DATA = "$DATA\postgres-data"
 $PG_BIN = "$PG_DIR\bin"
+$REDIS_DIR = "$DATA\redis"
+$LOG_DIR = "$DATA\logs"
 
 # Colors
 function Write-Color { param($Color, $Msg) Write-Host $Msg -ForegroundColor $Color }
 
-# Reuse existing opencode temp Postgres binaries if available (always use a fresh data dir)
-$EXISTING_PG = "C:\Users\MUHAMM~1\AppData\Local\Temp\opencode\pgsql"
-$PG_DATA = "$TEMP\pgsql-data"
-if (Test-Path "$EXISTING_PG\pgsql\bin\postgres.exe") {
-    $PG_BIN = "$EXISTING_PG\pgsql\bin"
-    Write-Color Green "Reusing existing PostgreSQL binaries from opencode temp"
-}
-elseif (Test-Path "$EXISTING_PG\bin\postgres.exe") {
-    $PG_BIN = "$EXISTING_PG\bin"
-    Write-Color Green "Reusing existing PostgreSQL from opencode temp"
-}
-$REDIS_DIR = "$TEMP\redis"
-$LOG_DIR = "$TEMP\logs"
-
 Write-Color Cyan "=== Veritas Engine Local Dev ==="
 Write-Color Gray "Root: $ROOT"
-Write-Color Gray "Temp: $TEMP"
+Write-Color Gray "Data: $DATA"
 
 # Cleanup function
 function Cleanup {
     Write-Color Yellow "Shutting down..."
     Get-Process -ErrorAction SilentlyContinue | Where-Object {
-        $_.Path -like "$TEMP*" -or
+        $_.Path -like "$DATA*" -or
         $_.CommandLine -like "*next*start*" -or
         $_.CommandLine -like "*tsx*worker*" -or
         $_.CommandLine -like "*uvicorn*"
@@ -63,8 +52,8 @@ function Cleanup {
     }
 
     if ($Clean) {
-        Write-Color Yellow "Cleaning temp directory..."
-        Remove-Item -Recurse -Force $TEMP -ErrorAction SilentlyContinue
+        Write-Color Yellow "Cleaning local data directory..."
+        Remove-Item -Recurse -Force "$DATA\postgres-data" -ErrorAction SilentlyContinue
     }
 }
 
@@ -77,21 +66,18 @@ if (-not $Detach) {
 # Step 1: PostgreSQL
 Write-Color Cyan "`n[1/6] PostgreSQL"
 if (-not (Test-Path "$PG_BIN\postgres.exe")) {
-    Write-Color Gray "Downloading PostgreSQL 16 (compact)..."
-    # Use smaller BigSQL distribution (~120MB vs 338MB)
-    $url = "https://www.bigsql.org/uploads/3/8/0/2/3802057/pg16.4-windows-x64.zip"
-    $zip = "$TEMP\pgsql.zip"
-    New-Item -ItemType Directory -Force -Path $TEMP | Out-Null
-    try {
-        Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing -TimeoutSec 600
-    } catch {
-        Write-Color Yellow "BigSQL failed, trying EDB..."
-        $url = "https://get.enterprisedb.com/postgresql/postgresql-16.4-1-windows-x64-binaries.zip"
-        Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing -TimeoutSec 600
-    }
-    Write-Color Gray "Extracting..."
-    Expand-Archive -Path $zip -DestinationPath $PG_DIR -Force
-    Remove-Item $zip
+    Write-Color Gray "Downloading embedded PostgreSQL 17 (small, once only ~25MB)..."
+    New-Item -ItemType Directory -Force -Path $PG_DIR | Out-Null
+    $jar = "$PG_DIR\pg.jar"
+    $url = "https://repo1.maven.org/maven2/io/zonky/test/postgres/embedded-postgres-binaries-windows-amd64/17.4.0/embedded-postgres-binaries-windows-amd64-17.4.0.jar"
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    Invoke-WebRequest -Uri $url -OutFile $jar -UseBasicParsing -TimeoutSec 600
+    Write-Color Gray "Extracting (tar + lzma)..."
+    tar -xf $jar -C $PG_DIR
+    $txz = Get-ChildItem "$PG_DIR\*.txz" | Select-Object -First 1
+    python -c "import lzma, shutil; shutil.copyfileobj(lzma.open(r'$($txz.FullName)'), open(r'$PG_DIR\pg.tar','wb'))"
+    tar -xf "$PG_DIR\pg.tar" -C $PG_DIR
+    Get-ChildItem "$PG_DIR\pg.jar", "$PG_DIR\pg.tar", "$PG_DIR\*.txz" -ErrorAction SilentlyContinue | Remove-Item -Force
 }
 else { Write-Color Green "PostgreSQL already present" }
 
@@ -126,15 +112,11 @@ Write-Color Green "PostgreSQL ready"
 
 # Step 2: Redis
 Write-Color Cyan "`n[2/6] Redis"
-$EXISTING_REDIS = "C:\Users\MUHAMM~1\AppData\Local\Temp\opencode\redis"
-if (Test-Path "$EXISTING_REDIS\redis-server.exe") {
-    $REDIS_DIR = $EXISTING_REDIS
-    Write-Color Green "Reusing existing Redis from opencode temp"
-}
-elseif (-not (Test-Path "$REDIS_DIR\redis-server.exe")) {
-    Write-Color Gray "Downloading Redis..."
+if (-not (Test-Path "$REDIS_DIR\redis-server.exe")) {
+    Write-Color Gray "Downloading Redis (one time only)..."
     $url = "https://github.com/tporadowski/redis/releases/download/v5.0.14.1/Redis-x64-5.0.14.1.zip"
-    $zip = "$TEMP\redis.zip"
+    $zip = "$DATA\redis.zip"
+    New-Item -ItemType Directory -Force -Path $DATA | Out-Null
     Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
     Expand-Archive -Path $zip -DestinationPath $REDIS_DIR -Force
     Remove-Item $zip
@@ -213,7 +195,7 @@ $env:ANALYSIS_MODE = "queue"
 $env:REDIS_URL = "redis://127.0.0.1:6379"
 $env:SEMANTIC_SIMILARITY_THRESHOLD = "0.6"
 $webLog = "$LOG_DIR\web.log"
-$webProc = Start-Process -FilePath "npx.cmd" -ArgumentList "next start -p $Port" -WorkingDirectory $ROOT -RedirectStandardOutput $webLog -RedirectStandardError "$LOG_DIR\web.err.log" -PassThru -NoNewWindow
+$webProc = Start-Process -FilePath "C:\Program Files\nodejs\node.exe" -ArgumentList ".\node_modules\next\dist\bin\next","start","-p $Port" -WorkingDirectory $ROOT -RedirectStandardOutput $webLog -RedirectStandardError "$LOG_DIR\web.err.log" -PassThru -NoNewWindow
 Write-Color Green "Next.js started (PID: $($webProc.Id)) on port $Port"
 
 # Wait for web

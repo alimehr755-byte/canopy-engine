@@ -1,6 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: "standalone",
   outputFileTracingRoot: import.meta.dirname,
   serverExternalPackages: ["@prisma/client", "unpdf", "mammoth", "bullmq", "pino", "prom-client"],
   experimental: {
